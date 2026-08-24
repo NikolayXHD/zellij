@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * fix: nested-session detection over SSH (https://github.com/zellij-org/zellij/pull/5522)
 * fix: some issues with notification parsing (eg. neovim notification on save) (https://github.com/zellij-org/zellij/pull/5523)
 * fix: kitty image size on startup and clearing with stacked unlisted full framed panes (https://github.com/zellij-org/zellij/pull/5526)
+* fix: focus event in remote attach (https://github.com/zellij-org/zellij/pull/5527)
 
 ## [0.45.0] - 2026-08-20
 * feat: allow tabs to have different sizes if clients aren't focused on the same one (https://github.com/zellij-org/zellij/pull/5133)
