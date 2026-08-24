@@ -5072,6 +5072,20 @@ impl Tab {
         let selectable_tiled_panes = self.tiled_panes.get_panes().filter(|(_, p)| p.selectable());
         selectable_tiled_panes.count() > 0
     }
+    pub fn resize_pty_all_panes(&mut self) -> Result<()> {
+        let err_context = || format!("failed to resize PTYs of all panes in tab {}", self.id);
+        self.tiled_panes
+            .resize_pty_all_panes()
+            .with_context(err_context)?;
+        self.floating_panes
+            .resize_pty_all_panes(&mut self.os_api)
+            .with_context(err_context)?;
+        for (_is_scrollback_editor, pane) in self.suppressed_panes.values_mut() {
+            resize_pty!(pane, self.os_api, self.senders, self.character_cell_size)
+                .with_context(err_context)?;
+        }
+        Ok(())
+    }
     pub fn resize_whole_tab(&mut self, new_screen_size: Size) -> Result<()> {
         let err_context = || format!("failed to resize whole tab (id {})", self.id);
         self.size = new_screen_size;

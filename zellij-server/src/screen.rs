@@ -2646,16 +2646,17 @@ impl Screen {
         &mut self,
         client_id: ClientId,
         pixel_dimensions: PixelDimensions,
-    ) {
+    ) -> bool {
+        let previous_character_cell_size = *self.character_cell_size.borrow();
         self.pixel_dimensions.merge(pixel_dimensions);
         if let Some(character_cell_size) = self.pixel_dimensions.character_cell_size {
             *self.character_cell_size.borrow_mut() = Some(character_cell_size);
         } else if let Some(text_area_size) = self.pixel_dimensions.text_area_size {
             let Some(client_size) = self.client_sizes.get(&client_id).copied() else {
-                return;
+                return false;
             };
             if client_size.rows == 0 || client_size.cols == 0 {
-                return;
+                return false;
             }
             let character_cell_size = SizeInPixels {
                 height: text_area_size.height / client_size.rows,
@@ -2663,6 +2664,15 @@ impl Screen {
             };
             *self.character_cell_size.borrow_mut() = Some(character_cell_size);
         }
+        *self.character_cell_size.borrow() != previous_character_cell_size
+    }
+
+    pub fn resize_pty_all_panes(&mut self) -> Result<()> {
+        for tab in self.tabs.values_mut() {
+            tab.resize_pty_all_panes()
+                .context("failed to re-apply pty sizes")?;
+        }
+        Ok(())
     }
 
     pub fn update_kitty_graphics_support(&mut self, client_id: ClientId, supported: bool) {
@@ -9931,7 +9941,11 @@ pub(crate) fn screen_thread_main(
                 }
             },
             ScreenInstruction::TerminalPixelDimensions(client_id, pixel_dimensions) => {
-                screen.update_pixel_dimensions(client_id, pixel_dimensions);
+                let character_cell_size_changed =
+                    screen.update_pixel_dimensions(client_id, pixel_dimensions);
+                if character_cell_size_changed {
+                    screen.resize_pty_all_panes()?;
+                }
             },
             ScreenInstruction::TerminalBackgroundColor(background_color_instruction) => {
                 screen.update_terminal_background_color(background_color_instruction);

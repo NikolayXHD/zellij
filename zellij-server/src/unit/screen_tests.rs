@@ -13171,3 +13171,75 @@ fn a_client_whose_host_focus_was_never_reported_counts_as_focused() {
         "a client is assumed focused until told otherwise, so this is not a transition"
     );
 }
+
+fn resize_pty_pixel_dimensions(
+    instruction: &PtyWriteInstruction,
+) -> Option<(Option<u16>, Option<u16>)> {
+    match instruction {
+        PtyWriteInstruction::ResizePty(_terminal_id, _cols, _rows, width, height) => {
+            Some((*width, *height))
+        },
+        _ => None,
+    }
+}
+
+#[test]
+pub fn reported_pixel_dimensions_are_applied_to_existing_ptys() {
+    let size = Size {
+        cols: 121,
+        rows: 20,
+    };
+    let mut mock_screen = MockScreen::new(size);
+    let pty_writer_receiver = mock_screen.pty_writer_receiver.take().unwrap();
+    let screen_thread = mock_screen.run(None, vec![]);
+    let received_pty_instructions = Arc::new(Mutex::new(vec![]));
+    let pty_writer_thread = log_actions_in_thread!(
+        received_pty_instructions,
+        PtyWriteInstruction::Exit,
+        pty_writer_receiver
+    );
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let instruction_count_before_reply = received_pty_instructions.lock().unwrap().len();
+    let _ = mock_screen
+        .to_screen
+        .send(ScreenInstruction::TerminalPixelDimensions(
+            mock_screen.main_client_id,
+            PixelDimensions {
+                character_cell_size: Some(SizeInPixels {
+                    height: 21,
+                    width: 8,
+                }),
+                text_area_size: None,
+            },
+        ));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    mock_screen.teardown(vec![pty_writer_thread, screen_thread]);
+
+    let received_pty_instructions = received_pty_instructions.lock().unwrap();
+    let (before_reply, after_reply) =
+        received_pty_instructions.split_at(instruction_count_before_reply);
+    let resizes_before_reply: Vec<(Option<u16>, Option<u16>)> = before_reply
+        .iter()
+        .filter_map(resize_pty_pixel_dimensions)
+        .collect();
+    let resizes_after_reply: Vec<(Option<u16>, Option<u16>)> = after_reply
+        .iter()
+        .filter_map(resize_pty_pixel_dimensions)
+        .collect();
+    assert!(
+        !resizes_before_reply.is_empty()
+            && resizes_before_reply
+                .iter()
+                .all(|dimensions| dimensions == &(None, None)),
+        "panes are created before the host reports its pixel dimensions, got: {:?}",
+        resizes_before_reply
+    );
+    assert!(
+        !resizes_after_reply.is_empty()
+            && resizes_after_reply
+                .iter()
+                .all(|(width, height)| width.is_some() && height.is_some()),
+        "existing ptys are resized with pixel dimensions once these are reported, got: {:?}",
+        resizes_after_reply
+    );
+}

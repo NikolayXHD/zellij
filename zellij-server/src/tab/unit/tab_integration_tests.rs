@@ -1573,6 +1573,51 @@ fn new_stacked_pane() {
     assert_snapshot!(snapshot);
 }
 
+fn sorted_kitty_visible_pane_ids(tab: &Tab) -> Vec<PaneId> {
+    let mut pane_ids: Vec<PaneId> = tab.kitty_visible_pane_ids().into_iter().collect();
+    pane_ids.sort();
+    pane_ids
+}
+
+#[test]
+fn kitty_visible_panes_exclude_collapsed_stack_members() {
+    let size = Size {
+        cols: 121,
+        rows: 20,
+    };
+    let client_id = 1;
+    let mut tab = create_new_tab(size, ModeInfo::default());
+    for i in 2..4 {
+        tab.new_pane(
+            PaneId::Terminal(i),
+            None,
+            None,
+            false,
+            true,
+            NewPanePlacement::Stacked {
+                pane_id_to_stack_under: None,
+                borderless: None,
+            },
+            Some(client_id),
+            None,
+        )
+        .unwrap();
+    }
+    let visible_before_focus_change = sorted_kitty_visible_pane_ids(&tab);
+    tab.move_focus_up(client_id).unwrap();
+    let visible_after_focus_change = sorted_kitty_visible_pane_ids(&tab);
+    assert_eq!(
+        visible_before_focus_change,
+        vec![PaneId::Terminal(3)],
+        "only the expanded stack member is kitty visible"
+    );
+    assert_eq!(
+        visible_after_focus_change,
+        vec![PaneId::Terminal(2)],
+        "kitty visibility follows the expanded stack member"
+    );
+}
+
 #[test]
 fn floating_panes_persist_across_toggles() {
     let size = Size {
