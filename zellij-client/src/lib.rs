@@ -557,6 +557,7 @@ pub async fn run_remote_client_terminal_loop(
     os_input: Box<dyn ClientOsApi>,
     mut connections: remote_attach::WebSocketConnections,
     nested_session_name: Option<String>,
+    host_contacted: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Option<ConnectToSession>, RemoteClientError> {
     use crate::os_input_output::{AsyncSignals, AsyncStdin};
 
@@ -592,7 +593,8 @@ pub async fn run_remote_client_terminal_loop(
     }
 
     let mut nested_frame_extractor = nested_session::NestedFrameExtractor::new();
-    let mut last_heard_from_host = std::time::Instant::now();
+    let mut reannounce_scheduler =
+        nested_session::ReannounceScheduler::new(std::time::Instant::now());
     let mut reannounce_check = tokio::time::interval(std::time::Duration::from_millis(
         nested_session::reannounce_check_interval_ms(),
     ));
@@ -606,7 +608,8 @@ pub async fn run_remote_client_terminal_loop(
                     Ok(buf) if !buf.is_empty() => {
                         let (cleaned, nested_frames) = nested_frame_extractor.extract(&buf);
                         for payload_bytes in nested_frames {
-                            last_heard_from_host = std::time::Instant::now();
+                            reannounce_scheduler.note_host_contact(std::time::Instant::now());
+                            host_contacted.store(true, std::sync::atomic::Ordering::Relaxed);
                             match nested_session::decode_payload(&payload_bytes) {
                                 Some(nested_session::NestedSessionMessage::Ping) => {
                                     let mut stdout = os_input.get_stdout_writer();
@@ -653,9 +656,7 @@ pub async fn run_remote_client_terminal_loop(
 
             _ = reannounce_check.tick() => {
                 if let Some(session_name) = &nested_session_name {
-                    if last_heard_from_host.elapsed()
-                        >= std::time::Duration::from_millis(nested_session::reannounce_silence_ms())
-                    {
+                    if reannounce_scheduler.on_tick(std::time::Instant::now()) {
                         let announce = nested_session::NestedSessionMessage::Announce {
                             session_name: session_name.clone(),
                             capabilities: vec![nested_session::NestedSessionCapability::NestedControl],
@@ -810,7 +811,6 @@ pub fn start_remote_client(
 ) -> Result<Option<ConnectToSession>, RemoteClientError> {
     info!("Starting Zellij client!");
 
-    let is_nested_inside_zellij_pane = os_input.env_variable("ZELLIJ").is_some();
     let remote_session_name = remote_session_url
         .trim_end_matches('/')
         .rsplit('/')
@@ -854,16 +854,15 @@ pub fn start_remote_client(
     os_input.set_raw_mode();
     stdout.write_all(ENABLE_BRACKETED_PASTE.as_bytes()).unwrap();
     stdout.write_all(ENABLE_FOCUS_REPORTING.as_bytes()).unwrap();
-    if is_nested_inside_zellij_pane {
-        let announce = nested_session::NestedSessionMessage::Announce {
-            session_name: remote_session_name.clone(),
-            capabilities: vec![nested_session::NestedSessionCapability::NestedControl],
-        };
-        stdout
-            .write_all(&nested_session::encode_frame(&announce))
-            .unwrap();
-        let _ = stdout.flush();
-    }
+    let announce = nested_session::NestedSessionMessage::Announce {
+        session_name: remote_session_name.clone(),
+        capabilities: vec![nested_session::NestedSessionCapability::NestedControl],
+    };
+    stdout
+        .write_all(&nested_session::encode_frame(&announce))
+        .unwrap();
+    let _ = stdout.flush();
+    let host_contacted = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     std::panic::set_hook({
         use zellij_utils::errors::handle_panic;
@@ -893,18 +892,14 @@ pub fn start_remote_client(
         std::process::exit(exit_status);
     };
 
-    let nested_session_name = if is_nested_inside_zellij_pane {
-        Some(remote_session_name.clone())
-    } else {
-        None
-    };
     runtime.block_on(run_remote_client_terminal_loop(
         os_input.clone(),
         connections,
-        nested_session_name,
+        Some(remote_session_name.clone()),
+        host_contacted.clone(),
     ))?;
 
-    if is_nested_inside_zellij_pane {
+    if host_contacted.load(std::sync::atomic::Ordering::Relaxed) {
         let mut stdout = os_input.get_stdout_writer();
         let _ = stdout.write_all(&nested_session::encode_frame(
             &nested_session::NestedSessionMessage::Bye,
@@ -944,7 +939,6 @@ pub fn start_client(
     }
     info!("Starting Zellij client!");
 
-    let is_nested_inside_zellij_pane = os_input.env_variable("ZELLIJ").is_some();
     let own_session_name = info.get_session_name().to_owned();
 
     let explicitly_disable_kitty_keyboard_protocol = config_options
@@ -1175,22 +1169,18 @@ pub fn start_client(
     let mut stdout = os_input.get_stdout_writer();
     stdout.write_all(ENABLE_BRACKETED_PASTE.as_bytes()).unwrap();
     stdout.write_all(ENABLE_FOCUS_REPORTING.as_bytes()).unwrap();
-    let nested_reannounce = if is_nested_inside_zellij_pane {
-        let announce = nested_session::NestedSessionMessage::Announce {
-            session_name: own_session_name.clone(),
-            capabilities: vec![nested_session::NestedSessionCapability::NestedControl],
-        };
-        stdout
-            .write_all(&nested_session::encode_frame(&announce))
-            .unwrap();
-        let _ = stdout.flush();
-        Some(crate::nested_reannounce::NestedReannounce::spawn(
-            os_input.clone(),
-            own_session_name.clone(),
-        ))
-    } else {
-        None
+    let announce = nested_session::NestedSessionMessage::Announce {
+        session_name: own_session_name.clone(),
+        capabilities: vec![nested_session::NestedSessionCapability::NestedControl],
     };
+    stdout
+        .write_all(&nested_session::encode_frame(&announce))
+        .unwrap();
+    let _ = stdout.flush();
+    let nested_reannounce = crate::nested_reannounce::NestedReannounce::spawn(
+        os_input.clone(),
+        own_session_name.clone(),
+    );
 
     let (send_client_instructions, receive_client_instructions): ChannelWithContext<
         ClientInstruction,
@@ -1580,7 +1570,7 @@ pub fn start_client(
                 let _ = out.flush();
             },
             ClientInstruction::EmitNestedSessionFrame(payload_bytes) => {
-                if is_nested_inside_zellij_pane {
+                if nested_reannounce.host_contacted() {
                     let frame = nested_session::encode_frame_from_payload(&payload_bytes);
                     let mut out = os_input.get_stdout_writer();
                     let _ = out.write_all(&frame);
@@ -1591,13 +1581,11 @@ pub fn start_client(
         }
     }
 
-    if let Some(nested_reannounce) = &nested_reannounce {
-        nested_reannounce.stop();
-    }
+    nested_reannounce.stop();
 
     router_thread.join().unwrap();
 
-    if is_nested_inside_zellij_pane {
+    if nested_reannounce.host_contacted() {
         let mut stdout = os_input.get_stdout_writer();
         let _ = stdout.write_all(&nested_session::encode_frame(
             &nested_session::NestedSessionMessage::Bye,
