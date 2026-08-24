@@ -12893,8 +12893,10 @@ fn an_osc_99_notification_reaching_an_osc_9_host_is_translated_down() {
 
     screen.forward_desktop_notifications(
         vec![PendingNotification::Osc99 {
-            payload: "i=1:d=0;the build finished".to_owned(),
+            payload: "i=1;the build finished".to_owned(),
             terminator: "\u{7}".to_owned(),
+            wants_report: false,
+            display: Some(("the build finished".to_owned(), String::new())),
         }],
         1,
     );
@@ -12907,6 +12909,36 @@ fn an_osc_99_notification_reaching_an_osc_9_host_is_translated_down() {
 }
 
 #[test]
+fn an_osc_99_request_with_nothing_to_show_is_not_sent_to_an_osc_9_host() {
+    let (mut screen, server_receiver) =
+        screen_with_a_client_for_notifications(HostNotificationProtocol::Auto, BTreeMap::new());
+
+    screen.forward_desktop_notifications(
+        vec![
+            PendingNotification::Osc99 {
+                payload: "i=1:d=0;the build".to_owned(),
+                terminator: "\u{7}".to_owned(),
+                wants_report: false,
+                display: None,
+            },
+            PendingNotification::Osc99 {
+                payload: "i=1:p=close;".to_owned(),
+                terminator: "\u{7}".to_owned(),
+                wants_report: false,
+                display: None,
+            },
+        ],
+        1,
+    );
+
+    assert_eq!(
+        collect_forwarded_notifications(&server_receiver),
+        "",
+        "unfinished chunks and closes have no legacy equivalent to send"
+    );
+}
+
+#[test]
 fn an_osc_99_notification_reaching_an_osc_99_host_keeps_its_namespaced_identifier() {
     let (mut screen, server_receiver) =
         screen_with_a_client_for_notifications(HostNotificationProtocol::Auto, kitty_env());
@@ -12915,6 +12947,8 @@ fn an_osc_99_notification_reaching_an_osc_99_host_keeps_its_namespaced_identifie
         vec![PendingNotification::Osc99 {
             payload: "i=myid;the build finished".to_owned(),
             terminator: "\u{7}".to_owned(),
+            wants_report: false,
+            display: Some(("the build finished".to_owned(), String::new())),
         }],
         7,
     );

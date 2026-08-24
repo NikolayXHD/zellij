@@ -78,7 +78,7 @@ use crate::notifications::NotificationProtocol;
 use crate::os_input_output::ResizeCache;
 use crate::pane_groups::PaneGroups;
 use crate::panes::alacritty_functions::xparse_color;
-use crate::panes::grid::{namespace_notification_id, PendingNotification};
+use crate::panes::grid::{namespace_notification_id, Osc99PayloadType, PendingNotification};
 use crate::panes::nested_session_modal::GuestModalShortcuts;
 use crate::panes::terminal_character::AnsiCode;
 use crate::panes::terminal_pane::{BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END};
@@ -118,16 +118,14 @@ use crate::mobile_web::MobileWebPrefs;
 /// Returns Some((terminal_id, full_osc_bytes)) where full_osc_bytes is
 /// the complete reconstructed OSC 99 sequence with original identifier,
 /// ready to write to the pane's PTY.
-/// Denormalizes a namespaced OSC 99 response.
-///
-/// Parses the namespaced `i=p<N>[r][q].<original_id>` format and returns:
-/// - `pane_id`: the terminal pane that originated the notification
-/// - `app_wants_report`: `r` flag — app originally requested `a=report`
-/// - `is_query`: `q` flag — this was a capability query (`p=?`)
-/// - `restored_response_bytes`: the response with the original `i=` value restored
-pub(crate) fn denormalize_notification_response(
-    payload: &[u8],
-) -> Option<(u32, bool, bool, Vec<u8>)> {
+pub(crate) struct NotificationResponse {
+    pub terminal_id: u32,
+    pub forward_to_pane: bool,
+    pub focus_pane: bool,
+    pub bytes: Vec<u8>,
+}
+
+pub(crate) fn denormalize_notification_response(payload: &[u8]) -> Option<NotificationResponse> {
     let payload_str = str::from_utf8(payload).ok()?;
 
     // Split into metadata and response payload on first ';'
@@ -142,42 +140,62 @@ pub(crate) fn denormalize_notification_response(
     // Find the i= key in colon-separated metadata
     let mut terminal_id = None;
     let mut app_wants_report = false;
-    let mut is_query = false;
+    let mut payload_type = Osc99PayloadType::Other;
     let mut restored_parts = Vec::new();
 
     for kv in metadata.split(':') {
         if let Some(namespaced_value) = kv.strip_prefix("i=p") {
-            // Parse "p<N>[r][q].<original_id>"
             if let Some(dot_pos) = namespaced_value.find('.') {
                 let flags_part = namespaced_value.get(..dot_pos).unwrap_or_default();
                 let original_id = namespaced_value.get(dot_pos + 1..).unwrap_or_default();
-                let pane_id_str = flags_part.trim_end_matches(|c| c == 'r' || c == 'q');
-                let flag_chars = flags_part.get(pane_id_str.len()..).unwrap_or_default();
+                let digits = flags_part
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(flags_part.len());
+                let pane_id_str = flags_part.get(..digits).unwrap_or_default();
+                let flag_chars = flags_part.get(digits..).unwrap_or_default();
                 if let Ok(pid) = pane_id_str.parse::<u32>() {
                     terminal_id = Some(pid);
                     app_wants_report = flag_chars.contains('r');
-                    is_query = flag_chars.contains('q');
-                    // Empty original_id means the app never sent an i= key;
-                    // don't inject one into the response
-                    if !original_id.is_empty() {
+                    if original_id.is_empty() {
+                        restored_parts.push("i=0".to_owned());
+                    } else {
                         restored_parts.push(format!("i={}", original_id));
                     }
                     continue;
                 }
             }
         }
+        if let Some(payload_value) = kv.strip_prefix("p=") {
+            payload_type = Osc99PayloadType::from_metadata_value(payload_value);
+        }
         restored_parts.push(kv.to_string());
     }
 
     let terminal_id = terminal_id?;
+    let response_payload = if payload_type == Osc99PayloadType::Alive {
+        let prefix_with_report = format!("p{}r.", terminal_id);
+        let prefix = format!("p{}.", terminal_id);
+        let alive_ids: Vec<&str> = response_payload
+            .trim_start_matches(';')
+            .split(',')
+            .filter_map(|id| {
+                id.strip_prefix(&prefix_with_report)
+                    .or_else(|| id.strip_prefix(&prefix))
+            })
+            .map(|id| if id.is_empty() { "0" } else { id })
+            .collect();
+        format!(";{}", alive_ids.join(","))
+    } else {
+        response_payload.to_owned()
+    };
     let restored_metadata = restored_parts.join(":");
     let full_response = format!("\x1b]99;{}{}\x1b\\", restored_metadata, response_payload);
-    Some((
+    Some(NotificationResponse {
         terminal_id,
-        app_wants_report,
-        is_query,
-        full_response.into_bytes(),
-    ))
+        forward_to_pane: app_wants_report || payload_type.is_control_request(),
+        focus_pane: !payload_type.is_control_request(),
+        bytes: full_response.into_bytes(),
+    })
 }
 
 /// Get the active tab and call a closure on it
@@ -4513,6 +4531,8 @@ impl Screen {
                         PendingNotification::Osc99 {
                             payload,
                             terminator,
+                            wants_report,
+                            ..
                         },
                     ) => {
                         let (metadata, rest) = match payload.find(';') {
@@ -4522,12 +4542,16 @@ impl Screen {
                             ),
                             None => (payload.as_str(), ""),
                         };
-                        let namespaced_metadata = namespace_notification_id(metadata, pane_id);
+                        let namespaced_metadata =
+                            namespace_notification_id(metadata, pane_id, *wants_report);
                         Some(format!(
                             "\u{1b}]99;{}{}{}",
                             namespaced_metadata, rest, terminator
                         ))
                     },
+                    (_, PendingNotification::Osc99 { display, .. }) => display
+                        .as_ref()
+                        .and_then(|(title, body)| protocol.render(title, body)),
                     _ => {
                         let (title, body) = notification.title_and_body();
                         protocol.render(&title, &body)
@@ -12082,19 +12106,15 @@ pub(crate) fn screen_thread_main(
                 screen.render(None)?;
             },
             ScreenInstruction::DesktopNotificationResponse(raw_bytes, client_id) => {
-                if let Some((terminal_id, app_wants_report, is_query, rewritten_bytes)) =
-                    denormalize_notification_response(&raw_bytes)
-                {
-                    let pane_id = PaneId::Terminal(terminal_id);
-                    // Write response to the pane if the app expects it:
-                    // capability query answers (q flag) or activation reports (r flag)
-                    if app_wants_report || is_query {
+                if let Some(response) = denormalize_notification_response(&raw_bytes) {
+                    let pane_id = PaneId::Terminal(response.terminal_id);
+                    if response.forward_to_pane {
                         let all_tabs = screen.get_tabs_mut();
                         for tab in all_tabs.values_mut() {
                             if tab.has_pane_with_pid(&pane_id) {
                                 tab.write_to_pane_id(
                                     &None,
-                                    rewritten_bytes,
+                                    response.bytes,
                                     false,
                                     pane_id,
                                     None,
@@ -12105,8 +12125,7 @@ pub(crate) fn screen_thread_main(
                             }
                         }
                     }
-                    // Focus the pane on activation click (not on query responses)
-                    if !is_query {
+                    if response.focus_pane {
                         screen
                             .focus_pane_with_id(pane_id, false, false, client_id)
                             .non_fatal();
