@@ -275,6 +275,7 @@ pub(crate) struct Tab {
     pub tab_has_pending_bell: bool,
     pub tab_bell_flash: bool, // currently in mid-notification-flash
     pub tab_bell_ring: bool,  // need to send ANSI BEL to the controlling terminal
+    tab_visible: bool,
 }
 
 // FIXME: Use a struct that has a pane_type enum, to reduce all of the duplication
@@ -1034,6 +1035,7 @@ impl Tab {
             tab_bell_flash: false,
             tab_bell_ring: false,
             dimmed_clients: HashSet::new(),
+            tab_visible: true,
         }
     }
 
@@ -6609,17 +6611,19 @@ impl Tab {
         // hidden as a tiled one when its tab goes away, and plugins that idle on a timer (eg. the
         // session-manager, which polls the session list once a second) keep that timer armed until
         // they are told otherwise.
-        let pids_in_this_tab = self
-            .tiled_panes
-            .pane_ids()
-            .chain(self.floating_panes.pane_ids())
-            .filter_map(|p| match p {
-                PaneId::Plugin(pid) => Some(pid),
-                _ => None,
-            });
+        self.tab_visible = visible;
+        let floating_panes_are_shown = self.floating_panes.panes_are_shown();
+        let tiled_pids = self.tiled_panes.pane_ids().filter_map(|p| match p {
+            PaneId::Plugin(pid) => Some(*pid),
+            _ => None,
+        });
+        let floating_pids = self.floating_panes.pane_ids().filter_map(|p| match p {
+            PaneId::Plugin(pid) if !visible || floating_panes_are_shown => Some(*pid),
+            _ => None,
+        });
         let mut plugin_updates = vec![];
-        for pid in pids_in_this_tab {
-            plugin_updates.push((Some(*pid), None, Event::Visible(visible)));
+        for pid in tiled_pids.chain(floating_pids) {
+            plugin_updates.push((Some(pid), None, Event::Visible(visible)));
         }
         self.senders
             .send_to_plugin(PluginInstruction::Update(plugin_updates))
@@ -6942,20 +6946,49 @@ impl Tab {
     }
     pub fn show_floating_panes(&mut self) {
         // this function is to be preferred to directly invoking floating_panes.toggle_show_panes(true)
+        let were_shown = self.floating_panes.panes_are_shown();
         self.floating_panes.toggle_show_panes(true);
         self.tiled_panes.unfocus_all_panes();
         self.set_force_render();
+        if !were_shown {
+            self.notify_floating_plugins_of_visibility(true);
+        }
     }
 
     pub fn hide_floating_panes(&mut self) {
         // this function is to be preferred to directly invoking
         // floating_panes.toggle_show_panes(false)
+        let were_shown = self.floating_panes.panes_are_shown();
         if self.floating_panes.fullscreen_is_active() {
             self.floating_panes.unset_fullscreen();
         }
         self.floating_panes.toggle_show_panes(false);
         self.tiled_panes.focus_all_panes();
         self.set_force_render();
+        if were_shown {
+            self.notify_floating_plugins_of_visibility(false);
+        }
+    }
+
+    fn notify_floating_plugins_of_visibility(&self, visible: bool) {
+        if !self.tab_visible {
+            return;
+        }
+        let plugin_updates: Vec<_> = self
+            .floating_panes
+            .pane_ids()
+            .filter_map(|p| match p {
+                PaneId::Plugin(pid) => Some((Some(*pid), None, Event::Visible(visible))),
+                _ => None,
+            })
+            .collect();
+        if plugin_updates.is_empty() {
+            return;
+        }
+        self.senders
+            .send_to_plugin(PluginInstruction::Update(plugin_updates))
+            .with_context(|| format!("failed to set visibility of floating panes to {visible}"))
+            .non_fatal();
     }
 
     pub fn show_floating_panes_atomic(&mut self, mut completion: Option<NotificationEnd>) {

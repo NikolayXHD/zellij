@@ -281,6 +281,9 @@ impl FloatingPanes {
     pub fn panes_are_visible(&self) -> bool {
         self.show_panes && !*self.fullscreen_covers_ui.borrow()
     }
+    pub fn panes_are_shown(&self) -> bool {
+        self.show_panes
+    }
     pub fn has_active_panes(&self) -> bool {
         !self.active_panes.is_empty()
     }
