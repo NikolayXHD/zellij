@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * fix: save space for title row in fixed-layout panes in titles only mode (https://github.com/zellij-org/zellij/pull/5533)
 * fix: properly fire visibility event to plugins when their tab/floating-layer is hidden/shown (https://github.com/zellij-org/zellij/pull/5518 and https://github.com/zellij-org/zellij/pull/5534)
 * feat: allow setting explicit_theme_hue (light/dark) (https://github.com/zellij-org/zellij/pull/5536)
+* fix: input mode updates when switching tabs (https://github.com/zellij-org/zellij/pull/5535)
 
 ## [0.45.0] - 2026-08-20
 * feat: allow tabs to have different sizes if clients aren't focused on the same one (https://github.com/zellij-org/zellij/pull/5133)

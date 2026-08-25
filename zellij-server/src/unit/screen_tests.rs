@@ -8143,6 +8143,59 @@ pub fn tab_switch_only_updates_active_tab_plugins() {
 }
 
 #[test]
+pub fn closing_tab_updates_input_modes_of_destination_tab_plugins() {
+    let size = Size { cols: 80, rows: 10 };
+
+    let mut mock_screen = MockScreen::new(size);
+    let client_id = mock_screen.main_client_id;
+    mock_screen.new_tab_with_plugins(vec![2]);
+    let mut initial_layout = TiledPaneLayout::default();
+    initial_layout.children_split_direction = SplitDirection::Vertical;
+    initial_layout.children = vec![TiledPaneLayout::default(), TiledPaneLayout::default()];
+    let session_metadata = mock_screen.clone_session_metadata();
+    let screen_thread = mock_screen.run(Some(initial_layout), vec![]);
+
+    let received_plugin_instructions = Arc::new(Mutex::new(vec![]));
+    let plugin_receiver = mock_screen.plugin_receiver.take().unwrap();
+    let plugin_thread = log_actions_in_thread!(
+        received_plugin_instructions,
+        PluginInstruction::Exit,
+        plugin_receiver
+    );
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let instructions_before_close = received_plugin_instructions.lock().unwrap().len();
+
+    let close_tab = CliAction::CloseTab { tab_id: None };
+    send_cli_action_to_server(&session_metadata, close_tab, client_id);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    mock_screen.teardown(vec![plugin_thread, screen_thread]);
+
+    let instructions = received_plugin_instructions.lock().unwrap();
+    let instructions_after_close = &instructions[instructions_before_close..];
+    let mut mode_updates_received: Vec<(u32, ClientId)> = vec![];
+    for instruction in instructions_after_close.iter() {
+        if let PluginInstruction::Update(updates) = instruction {
+            for (pid, cid, event) in updates {
+                if let Event::ModeUpdate(..) = event {
+                    if let (Some(pid), Some(cid)) = (pid, cid) {
+                        mode_updates_received.push((*pid, *cid));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        mode_updates_received.contains(&(2, client_id)),
+        "Plugin 2 in the tab focus returned to should receive a ModeUpdate for client {}, got: {:?}",
+        client_id,
+        mode_updates_received
+    );
+}
+
+#[test]
 pub fn inactive_tab_plugins_get_fresh_state_on_activation() {
     // Tab 0: plugin pane 2 (from new_tab_with_plugins)
     // Tab 1: terminal panes only (from run, client starts here)

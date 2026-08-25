@@ -1913,6 +1913,7 @@ impl Screen {
             .next()
             .context("screen contained no tabs")
             .with_context(err_context)?;
+        let mut destination_tab_ids = HashSet::new();
         for (client_id, client_mode_info) in client_ids_and_mode_infos {
             let client_tab_history = self.tab_history.entry(client_id).or_insert_with(Vec::new);
             if let Some(client_previous_tab) = client_tab_history.pop() {
@@ -1921,6 +1922,7 @@ impl Screen {
                     client_active_tab
                         .add_client(client_id, Some(client_mode_info))
                         .with_context(err_context)?;
+                    destination_tab_ids.insert(client_previous_tab);
                     continue;
                 }
             }
@@ -1930,6 +1932,14 @@ impl Screen {
                 .with_context(err_context)?
                 .add_client(client_id, Some(client_mode_info))
                 .with_context(err_context)?;
+            destination_tab_ids.insert(first_tab_index);
+        }
+        for destination_tab_id in destination_tab_ids {
+            if let Some(destination_tab) = self.tabs.get_mut(&destination_tab_id) {
+                destination_tab
+                    .update_input_modes()
+                    .with_context(err_context)?;
+            }
         }
         Ok(())
     }
@@ -4963,12 +4973,11 @@ impl Screen {
                     client_id,
                     blocking_terminal,
                 )?;
-                tab.update_input_modes()?;
-
                 if let Some(drained_clients) = drained_clients {
                     tab.visible(true)?;
                     tab.add_multiple_clients(drained_clients)?;
                 }
+                tab.update_input_modes()?;
                 let tab_size = tab.size;
                 tab.resize_whole_tab(tab_size).with_context(err_context)?;
                 tab.set_force_render();
@@ -6551,7 +6560,7 @@ impl Screen {
                     .with_context(err_context)?;
                 (active_pane_id, active_pane, pane_to_break_is_floating)
             };
-            let update_mode_infos = false;
+            let update_mode_infos = true;
             match direction {
                 Direction::Right | Direction::Down => {
                     self.switch_tab_next(None, update_mode_infos, client_id)?;
