@@ -2062,6 +2062,8 @@ pub struct Options {
     pub mouse_hover_tips: ::core::option::Option<bool>,
     #[prost(string, optional, tag="67")]
     pub host_notification_protocol: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, optional, tag="68")]
+    pub scroll_mode_sync: ::core::option::Option<bool>,
 }
 /// Pane-targeting action messages
 #[allow(clippy::derive_partial_eq_without_eq)]

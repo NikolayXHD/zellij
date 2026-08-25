@@ -337,6 +337,12 @@ pub struct Options {
     #[serde(default)]
     pub mouse_scroll_resize: Option<bool>,
 
+    /// Whether scrolling a pane implicitly enters (and leaving the scroll implicitly exits) Scroll mode
+    /// default is true
+    #[clap(long, value_parser)]
+    #[serde(default)]
+    pub scroll_mode_sync: Option<bool>,
+
     /// Whether to enable mouse hover visual effects (frame highlight and help text)
     /// default is true
     #[clap(long, value_parser)]
@@ -553,6 +559,7 @@ impl Options {
         let show_release_notes = other.show_release_notes.or(self.show_release_notes);
         let advanced_mouse_actions = other.advanced_mouse_actions.or(self.advanced_mouse_actions);
         let mouse_scroll_resize = other.mouse_scroll_resize.or(self.mouse_scroll_resize);
+        let scroll_mode_sync = other.scroll_mode_sync.or(self.scroll_mode_sync);
         let mouse_hover_effects = other.mouse_hover_effects.or(self.mouse_hover_effects);
         let mouse_hover_tips = other.mouse_hover_tips.or(self.mouse_hover_tips);
         let visual_bell = other.visual_bell.or(self.visual_bell);
@@ -630,6 +637,7 @@ impl Options {
             show_release_notes,
             advanced_mouse_actions,
             mouse_scroll_resize,
+            scroll_mode_sync,
             mouse_hover_effects,
             mouse_hover_tips,
             visual_bell,
@@ -720,6 +728,7 @@ impl Options {
         let show_release_notes = other.show_release_notes.or(self.show_release_notes);
         let advanced_mouse_actions = other.advanced_mouse_actions.or(self.advanced_mouse_actions);
         let mouse_scroll_resize = other.mouse_scroll_resize.or(self.mouse_scroll_resize);
+        let scroll_mode_sync = other.scroll_mode_sync.or(self.scroll_mode_sync);
         let mouse_hover_effects = other.mouse_hover_effects.or(self.mouse_hover_effects);
         let mouse_hover_tips = other.mouse_hover_tips.or(self.mouse_hover_tips);
         let visual_bell = other.visual_bell.or(self.visual_bell);
@@ -797,6 +806,7 @@ impl Options {
             show_release_notes,
             advanced_mouse_actions,
             mouse_scroll_resize,
+            scroll_mode_sync,
             mouse_hover_effects,
             mouse_hover_tips,
             visual_bell,

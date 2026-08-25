@@ -2886,6 +2886,9 @@ impl Options {
         let mouse_scroll_resize =
             kdl_property_first_arg_as_bool_or_error!(kdl_options, "mouse_scroll_resize")
                 .map(|(v, _)| v);
+        let scroll_mode_sync =
+            kdl_property_first_arg_as_bool_or_error!(kdl_options, "scroll_mode_sync")
+                .map(|(v, _)| v);
         let mouse_hover_effects =
             kdl_property_first_arg_as_bool_or_error!(kdl_options, "mouse_hover_effects")
                 .map(|(v, _)| v);
@@ -3019,6 +3022,7 @@ impl Options {
             show_release_notes,
             advanced_mouse_actions,
             mouse_scroll_resize,
+            scroll_mode_sync,
             mouse_hover_effects,
             mouse_hover_tips,
             visual_bell,
@@ -4308,6 +4312,33 @@ impl Options {
             None
         }
     }
+    fn scroll_mode_sync_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
+        let comment_text = format!(
+            "{}\n{}\n{}",
+            " ",
+            "// Whether scrolling a pane implicitly enters and exits Scroll mode",
+            "// default is true",
+        );
+
+        let create_node = |node_value: bool| -> KdlNode {
+            let mut node = KdlNode::new("scroll_mode_sync");
+            node.push(KdlValue::Bool(node_value));
+            node
+        };
+        if let Some(scroll_mode_sync) = self.scroll_mode_sync {
+            let mut node = create_node(scroll_mode_sync);
+            if add_comments {
+                node.set_leading(format!("{}\n", comment_text));
+            }
+            Some(node)
+        } else if add_comments {
+            let mut node = create_node(false);
+            node.set_leading(format!("{}\n// ", comment_text));
+            Some(node)
+        } else {
+            None
+        }
+    }
     fn mouse_hover_tips_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
         let comment_text = format!(
             "{}\n{}\n{}",
@@ -4848,6 +4879,9 @@ impl Options {
         }
         if let Some(mouse_scroll_resize) = self.mouse_scroll_resize_to_kdl(add_comments) {
             nodes.push(mouse_scroll_resize);
+        }
+        if let Some(scroll_mode_sync) = self.scroll_mode_sync_to_kdl(add_comments) {
+            nodes.push(scroll_mode_sync);
         }
         if let Some(mouse_hover_effects) = self.mouse_hover_effects_to_kdl(add_comments) {
             nodes.push(mouse_hover_effects);
@@ -7655,6 +7689,42 @@ fn selection_options_default_to_none_when_unspecified() {
     let deserialized = Options::from_kdl(&document).unwrap();
     assert_eq!(deserialized.osc133_command_selection, None);
     assert_eq!(deserialized.word_separators, None);
+}
+
+#[test]
+fn scroll_mode_sync_from_kdl() {
+    let fake_config = r##"
+        scroll_mode_sync false
+    "##;
+    let document: KdlDocument = fake_config.parse().unwrap();
+    let deserialized = Options::from_kdl(&document).unwrap();
+    assert_eq!(deserialized.scroll_mode_sync, Some(false));
+
+    let empty_document: KdlDocument = "".parse().unwrap();
+    let deserialized_empty = Options::from_kdl(&empty_document).unwrap();
+    assert_eq!(
+        deserialized_empty.scroll_mode_sync, None,
+        "an unspecified scroll_mode_sync stays None so the default applies"
+    );
+}
+
+#[test]
+fn scroll_mode_sync_round_trips_through_kdl() {
+    let fake_config = r##"
+        scroll_mode_sync false
+    "##;
+    let document: KdlDocument = fake_config.parse().unwrap();
+    let deserialized = Options::from_kdl(&document).unwrap();
+    let mut serialized = Options::to_kdl(&deserialized, false);
+    let mut fake_document = KdlDocument::new();
+    fake_document.nodes_mut().append(&mut serialized);
+    let deserialized_from_serialized =
+        Options::from_kdl(&fake_document.to_string().parse::<KdlDocument>().unwrap()).unwrap();
+    assert_eq!(
+        deserialized_from_serialized.scroll_mode_sync,
+        Some(false),
+        "scroll_mode_sync survives a serialize/parse round trip"
+    );
 }
 
 #[test]

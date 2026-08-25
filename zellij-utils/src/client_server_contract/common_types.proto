@@ -1223,6 +1223,7 @@ message Options {
   optional bool dangerously_enable_paste_buffer_read = 58;
   optional bool mouse_hover_tips = 59;
   optional string host_notification_protocol = 67;
+  optional bool scroll_mode_sync = 68;
 }
 
 enum OnForceClose {

@@ -385,6 +385,7 @@ fn create_new_screen_with_capture(
         true,
         DEFAULT_WORD_SEPARATORS.to_owned(),
         mouse_scroll_resize,
+        true,
         mouse_hover_effects,
         true,
         visual_bell,
@@ -5819,6 +5820,7 @@ fn create_new_screen_with_message_capture(
         true,
         true,
         true,
+        true,
         visual_bell,
         false, // focus_follows_mouse
         false, // mouse_click_through
@@ -8930,6 +8932,7 @@ fn create_new_screen_with_forward_capture(size: Size) -> (Screen, ForwardCapture
         true,
         true,
         true,
+        true,
         visual_bell,
         false, // focus_follows_mouse
         false, // mouse_click_through
@@ -9782,6 +9785,7 @@ fn create_new_screen_with_theme_capture(size: Size) -> (Screen, ThemeCapture) {
         true,
         true,
         true,
+        true,
         false,
         false,
         web_server_ip,
@@ -10312,6 +10316,7 @@ fn create_non_mirrored_screen(size: Size) -> Screen {
         true,
         DEFAULT_WORD_SEPARATORS.to_owned(),
         true, // mouse_scroll_resize
+        true,
         true, // mouse_hover_effects
         true,
         true,  // visual_bell
@@ -12493,6 +12498,50 @@ pub fn focus_pane_with_id_syncs_scroll_mode() {
 }
 
 #[test]
+pub fn scrolling_syncs_scroll_mode_for_a_client_that_never_changed_mode() {
+    let size = Size { cols: 80, rows: 10 };
+    let mut initial_layout = TiledPaneLayout::default();
+    initial_layout.children_split_direction = SplitDirection::Vertical;
+    initial_layout.children = vec![TiledPaneLayout::default(), TiledPaneLayout::default()];
+    let mut mock_screen = MockScreen::new(size);
+    mock_screen.config.options.default_mode = Some(InputMode::Locked);
+    let client_id = mock_screen.main_client_id;
+    let session_metadata = mock_screen.clone_session_metadata();
+    let screen_thread = mock_screen.run(Some(initial_layout), vec![]);
+    let received_server_instructions = Arc::new(Mutex::new(vec![]));
+    let server_receiver = mock_screen.server_receiver.take().unwrap();
+    let server_thread = log_actions_in_thread!(
+        received_server_instructions,
+        ServerInstruction::KillSession,
+        server_receiver
+    );
+
+    let mut pane_contents = String::new();
+    for i in 0..20 {
+        pane_contents.push_str(&format!("fill pane up with something {}\n\r", i));
+    }
+    let _ = mock_screen.to_screen.send(ScreenInstruction::PtyBytes(
+        0,
+        pane_contents.as_bytes().to_vec(),
+    ));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    send_cli_action_to_server(
+        &session_metadata,
+        CliAction::ScrollUp { pane_id: None },
+        client_id,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        last_change_mode_for_client(&received_server_instructions, client_id),
+        Some(InputMode::Scroll),
+        "a client that never switched modes should still enter Scroll mode when scrolling",
+    );
+
+    mock_screen.teardown(vec![server_thread, screen_thread]);
+}
+
+#[test]
 pub fn scrolling_the_focused_pane_syncs_scroll_mode() {
     let size = Size { cols: 80, rows: 10 };
     let mut initial_layout = TiledPaneLayout::default();
@@ -12603,6 +12652,89 @@ pub fn scrolling_the_focused_pane_with_the_mouse_syncs_scroll_mode() {
         last_change_mode_for_client(&received_server_instructions, client_id),
         Some(InputMode::Scroll),
         "wheel-scrolling the focused pane up should switch the client to Scroll mode",
+    );
+
+    mock_screen.teardown(vec![server_thread, screen_thread]);
+}
+
+#[test]
+pub fn scrolling_does_not_sync_scroll_mode_when_disabled_in_the_config() {
+    let size = Size { cols: 80, rows: 10 };
+    let mut initial_layout = TiledPaneLayout::default();
+    initial_layout.children_split_direction = SplitDirection::Vertical;
+    initial_layout.children = vec![TiledPaneLayout::default(), TiledPaneLayout::default()];
+    let mut mock_screen = MockScreen::new(size);
+    mock_screen.config.options.scroll_mode_sync = Some(false);
+    let client_id = mock_screen.main_client_id;
+    let session_metadata = mock_screen.clone_session_metadata();
+    let screen_thread = mock_screen.run(Some(initial_layout), vec![]);
+    let received_server_instructions = Arc::new(Mutex::new(vec![]));
+    let server_receiver = mock_screen.server_receiver.take().unwrap();
+    let server_thread = log_actions_in_thread!(
+        received_server_instructions,
+        ServerInstruction::KillSession,
+        server_receiver
+    );
+
+    let mut pane_contents = String::new();
+    for i in 0..20 {
+        pane_contents.push_str(&format!("fill pane up with something {}\n\r", i));
+    }
+    let _ = mock_screen.to_screen.send(ScreenInstruction::PtyBytes(
+        0,
+        pane_contents.as_bytes().to_vec(),
+    ));
+    let _ = mock_screen.to_screen.send(ScreenInstruction::ChangeMode(
+        InputMode::Normal,
+        None,
+        client_id,
+        None,
+    ));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    received_server_instructions.lock().unwrap().clear();
+
+    send_cli_action_to_server(
+        &session_metadata,
+        CliAction::ScrollUp { pane_id: None },
+        client_id,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        last_change_mode_for_client(&received_server_instructions, client_id),
+        None,
+        "scrolling the focused pane up should not change the mode when scroll_mode_sync is false",
+    );
+
+    let _ = mock_screen.to_screen.send(ScreenInstruction::MouseEvent(
+        MouseEvent::new_scroll_up_event(Position::new(5, 10)),
+        client_id,
+        None,
+    ));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        last_change_mode_for_client(&received_server_instructions, client_id),
+        None,
+        "wheel-scrolling the focused pane should not change the mode when scroll_mode_sync is false",
+    );
+
+    let _ = mock_screen.to_screen.send(ScreenInstruction::ChangeMode(
+        InputMode::Scroll,
+        None,
+        client_id,
+        None,
+    ));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    received_server_instructions.lock().unwrap().clear();
+    send_cli_action_to_server(
+        &session_metadata,
+        CliAction::ScrollToBottom { pane_id: None },
+        client_id,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        last_change_mode_for_client(&received_server_instructions, client_id),
+        None,
+        "scrolling back to the bottom should not leave Scroll mode when scroll_mode_sync is false",
     );
 
     mock_screen.teardown(vec![server_thread, screen_thread]);

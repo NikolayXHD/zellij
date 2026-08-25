@@ -816,6 +816,7 @@ pub enum ScreenInstruction {
         default_editor: Option<PathBuf>,
         advanced_mouse_actions: bool,
         mouse_scroll_resize: bool,
+        scroll_mode_sync: bool,
         mouse_hover_effects: bool,
         mouse_hover_tips: bool,
         visual_bell: bool,
@@ -1577,6 +1578,7 @@ pub(crate) struct Screen {
     osc133_command_selection: bool,
     word_separators: String,
     mouse_scroll_resize: bool,
+    scroll_mode_sync: bool,
     mouse_hover_effects: bool,
     mouse_hover_tips: bool,
     visual_bell: bool,
@@ -1707,6 +1709,7 @@ impl Screen {
         osc133_command_selection: bool,
         word_separators: String,
         mouse_scroll_resize: bool,
+        scroll_mode_sync: bool,
         mouse_hover_effects: bool,
         mouse_hover_tips: bool,
         visual_bell: bool,
@@ -1776,6 +1779,7 @@ impl Screen {
             osc133_command_selection,
             word_separators,
             mouse_scroll_resize,
+            scroll_mode_sync,
             mouse_hover_effects,
             mouse_hover_tips,
             visual_bell,
@@ -6015,6 +6019,9 @@ impl Screen {
     // under unlock-first), so a client in another mode (Pane, Tab, Search, ...) is never
     // pulled out of it. See #638.
     fn sync_scroll_mode_on_focus(&mut self, client_id: ClientId) -> Result<()> {
+        if !self.scroll_mode_sync {
+            return Ok(());
+        }
         // base_mode is the default config reloads keep current; .mode is the fallback.
         let default_mode = self
             .default_mode_info
@@ -6025,6 +6032,7 @@ impl Screen {
         }
         let current_mode = match self.mode_info.get(&client_id) {
             Some(mode_info) => mode_info.mode,
+            None if self.active_tab_ids.contains_key(&client_id) => default_mode,
             None => return Ok(()),
         };
         let active_pane_is_scrolled = self.active_pane_is_scrolled(client_id);
@@ -6803,6 +6811,7 @@ impl Screen {
         default_editor: Option<PathBuf>,
         advanced_mouse_actions: bool,
         mouse_scroll_resize: bool,
+        scroll_mode_sync: bool,
         mouse_hover_effects: bool,
         mouse_hover_tips: bool,
         visual_bell: bool,
@@ -6835,6 +6844,7 @@ impl Screen {
         self.pane_frame_style = pane_frame_style;
         self.advanced_mouse_actions = advanced_mouse_actions;
         self.mouse_scroll_resize = mouse_scroll_resize;
+        self.scroll_mode_sync = scroll_mode_sync;
         self.mouse_hover_effects = mouse_hover_effects;
         self.mouse_hover_tips = mouse_hover_tips;
         self.visual_bell = visual_bell;
@@ -8029,6 +8039,7 @@ pub(crate) fn screen_thread_main(
         .clone()
         .unwrap_or_else(|| DEFAULT_WORD_SEPARATORS.to_owned());
     let mouse_scroll_resize = config_options.mouse_scroll_resize.unwrap_or(true);
+    let scroll_mode_sync = config_options.scroll_mode_sync.unwrap_or(true);
     let mouse_hover_effects = config_options.mouse_hover_effects.unwrap_or(true);
     let mouse_hover_tips = config_options.mouse_hover_tips.unwrap_or(true);
     let visual_bell = config_options.visual_bell.unwrap_or(true);
@@ -8080,6 +8091,7 @@ pub(crate) fn screen_thread_main(
         osc133_command_selection,
         word_separators,
         mouse_scroll_resize,
+        scroll_mode_sync,
         mouse_hover_effects,
         mouse_hover_tips,
         visual_bell,
@@ -11467,6 +11479,7 @@ pub(crate) fn screen_thread_main(
                 default_editor,
                 advanced_mouse_actions,
                 mouse_scroll_resize,
+                scroll_mode_sync,
                 mouse_hover_effects,
                 mouse_hover_tips,
                 visual_bell,
@@ -11499,6 +11512,7 @@ pub(crate) fn screen_thread_main(
                         default_editor,
                         advanced_mouse_actions,
                         mouse_scroll_resize,
+                        scroll_mode_sync,
                         mouse_hover_effects,
                         mouse_hover_tips,
                         visual_bell,
