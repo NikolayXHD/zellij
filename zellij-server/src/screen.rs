@@ -802,6 +802,7 @@ pub enum ScreenInstruction {
         host_theme_dark: Option<Styling>,
         /// Resolved styling for `theme_light`. See `host_theme_dark`.
         host_theme_light: Option<Styling>,
+        explicit_theme_hue: Option<ThemeHue>,
         simplified_ui: bool,
         default_shell: Option<PathBuf>,
         pane_frame_style: PaneFrameStyle,
@@ -1617,6 +1618,9 @@ pub(crate) struct Screen {
     host_descend_keys: Vec<KeyWithModifier>,
     host_descended: bool,
     host_terminal_theme_mode: Option<HostTerminalThemeMode>,
+    last_host_reported_theme_mode: Option<HostTerminalThemeMode>,
+    theme_policy: ThemePolicy,
+    configured_explicit_theme_hue: Option<ThemeHue>,
     host_theme_dark_styling: Option<Styling>,
     host_theme_light_styling: Option<Styling>,
     nested_session_handling: NestedSessionHandling,
@@ -1627,6 +1631,12 @@ pub(crate) struct Screen {
     client_notification_protocols: HashMap<ClientId, NotificationProtocol>,
     host_notification_protocol: HostNotificationProtocol,
     client_host_terminal_env: HashMap<ClientId, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThemePolicy {
+    Auto,
+    Pinned(HostTerminalThemeMode),
 }
 
 /// A pending forward waiting to be dispatched once the current in-flight
@@ -1815,6 +1825,9 @@ impl Screen {
             host_descend_keys: vec![],
             host_descended: false,
             host_terminal_theme_mode: None,
+            last_host_reported_theme_mode: None,
+            theme_policy: ThemePolicy::Auto,
+            configured_explicit_theme_hue: None,
             host_theme_dark_styling: None,
             host_theme_light_styling: None,
             nested_session_handling,
@@ -6828,6 +6841,7 @@ impl Screen {
         self.arrow_fonts = should_support_arrow_fonts;
 
         // global configuration
+        self.style.colors = theme;
         self.default_mode_info.update_theme(theme);
         self.default_mode_info
             .update_rounded_corners(rounded_corners);
@@ -6919,16 +6933,14 @@ impl Screen {
         self.broadcast_nested_shortcuts();
         Ok(())
     }
-    /// Apply a host-reported color-palette theme mode (CSI 2031 / DSR 997).
-    ///
-    /// This is the Phase 2 entry-point: it
-    /// 1. de-duplicates against the last-known mode,
-    /// 2. swaps the active palette to the configured `theme_dark` / `theme_light`
-    ///    (when both are configured) by reusing the reconfigure propagation,
-    /// 3. fans out an `Event::HostTerminalThemeChanged` plugin event,
-    /// 4. forwards a `CSI ?997;{1|2}n` DSR onto the pty of every terminal pane
-    ///    whose app opted in via `CSI ? 2031 h`.
     pub fn update_host_terminal_theme_mode(&mut self, mode: HostTerminalThemeMode) -> Result<()> {
+        self.last_host_reported_theme_mode = Some(mode);
+        if matches!(self.theme_policy, ThemePolicy::Pinned(_)) {
+            return Ok(());
+        }
+        self.apply_theme_mode(mode)
+    }
+    fn apply_theme_mode(&mut self, mode: HostTerminalThemeMode) -> Result<()> {
         let err_context = || "Failed to update host terminal theme mode".to_string();
 
         // dedupe
@@ -6950,6 +6962,7 @@ impl Screen {
             self.host_theme_dark_styling.is_some() && self.host_theme_light_styling.is_some();
         if auto_switch_enabled {
             if let Some(theme) = resolved {
+                self.style.colors = theme;
                 self.default_mode_info.update_theme(theme);
                 for tab in self.tabs.values_mut() {
                     tab.update_theme(theme);
@@ -7047,7 +7060,51 @@ impl Screen {
             }
             return Ok(());
         }
-        self.update_host_terminal_theme_mode(mode)
+        self.theme_policy = ThemePolicy::Pinned(mode);
+        self.apply_theme_mode(mode)
+    }
+    fn resolve_default_theme_mode(&mut self) -> Result<()> {
+        if self.host_terminal_theme_mode.is_some() {
+            return Ok(());
+        }
+        if !matches!(self.theme_policy, ThemePolicy::Auto) {
+            return Ok(());
+        }
+        if self.host_theme_dark_styling.is_some() && self.host_theme_light_styling.is_some() {
+            self.apply_theme_mode(HostTerminalThemeMode::Dark)?;
+        }
+        Ok(())
+    }
+    fn reapply_effective_theme_mode(&mut self) -> Result<()> {
+        let known_mode = match self.theme_policy {
+            ThemePolicy::Pinned(mode) => Some(mode),
+            ThemePolicy::Auto => self.host_terminal_theme_mode,
+        };
+        if let Some(mode) = known_mode {
+            self.host_terminal_theme_mode = None;
+            self.apply_theme_mode(mode)?;
+        }
+        Ok(())
+    }
+    fn apply_configured_explicit_theme_hue(
+        &mut self,
+        explicit_theme_hue: Option<ThemeHue>,
+    ) -> Result<()> {
+        self.configured_explicit_theme_hue = explicit_theme_hue;
+        match explicit_theme_hue {
+            Some(hue) => {
+                let mode = HostTerminalThemeMode::from(hue);
+                self.theme_policy = ThemePolicy::Pinned(mode);
+                self.apply_theme_mode(mode)
+            },
+            None => {
+                self.theme_policy = ThemePolicy::Auto;
+                match self.last_host_reported_theme_mode {
+                    Some(mode) => self.apply_theme_mode(mode),
+                    None => Ok(()),
+                }
+            },
+        }
     }
     pub fn toggle_pane_pinned(&mut self, client_id: ClientId) {
         active_tab_and_connected_client_id!(
@@ -7975,6 +8032,8 @@ pub(crate) fn screen_thread_main(
         );
     }
 
+    let explicit_theme_hue = config.options.explicit_theme_hue;
+
     let config_options = config.options;
     let host_notification_protocol = config_options
         .host_notification_protocol
@@ -8105,6 +8164,13 @@ pub(crate) fn screen_thread_main(
     screen.host_theme_light_styling = host_theme_light_styling;
     screen.paste_buffer_read_enabled = dangerously_enable_paste_buffer_read;
     screen.set_host_notification_protocol(host_notification_protocol);
+    if explicit_theme_hue.is_some() {
+        screen
+            .apply_configured_explicit_theme_hue(explicit_theme_hue)
+            .non_fatal();
+    } else {
+        screen.resolve_default_theme_mode().non_fatal();
+    }
 
     let mut pending_tab_ids: HashSet<usize> = HashSet::new();
     let mut pending_tab_switches: HashSet<(usize, ClientId)> = HashSet::new(); // usize is the
@@ -11465,6 +11531,7 @@ pub(crate) fn screen_thread_main(
                 theme,
                 host_theme_dark,
                 host_theme_light,
+                explicit_theme_hue,
                 simplified_ui,
                 default_shell,
                 pane_frame_style,
@@ -11526,6 +11593,14 @@ pub(crate) fn screen_thread_main(
                         client_id,
                     )
                     .non_fatal();
+                if explicit_theme_hue != screen.configured_explicit_theme_hue {
+                    screen
+                        .apply_configured_explicit_theme_hue(explicit_theme_hue)
+                        .non_fatal();
+                } else {
+                    screen.reapply_effective_theme_mode().non_fatal();
+                }
+                screen.resolve_default_theme_mode().non_fatal();
             },
             ScreenInstruction::RerunCommandPane(terminal_pane_id, completion_tx) => {
                 screen.rerun_command_pane_with_id(terminal_pane_id, completion_tx)

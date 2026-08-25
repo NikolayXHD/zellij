@@ -1224,6 +1224,7 @@ message Options {
   optional bool mouse_hover_tips = 59;
   optional string host_notification_protocol = 67;
   optional bool scroll_mode_sync = 68;
+  optional ThemeHue explicit_theme_hue = 69;
 }
 
 enum OnForceClose {
@@ -1257,6 +1258,12 @@ enum NestedSessionHandling {
   NESTED_SESSION_HANDLING_FULLSCREEN = 2;
   NESTED_SESSION_HANDLING_DESCEND = 3;
   NESTED_SESSION_HANDLING_NEVER = 4;
+}
+
+enum ThemeHue {
+  THEME_HUE_UNSPECIFIED = 0;
+  THEME_HUE_DARK = 1;
+  THEME_HUE_LIGHT = 2;
 }
 
 

@@ -2064,6 +2064,8 @@ pub struct Options {
     pub host_notification_protocol: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(bool, optional, tag="68")]
     pub scroll_mode_sync: ::core::option::Option<bool>,
+    #[prost(enumeration="ThemeHue", optional, tag="69")]
+    pub explicit_theme_hue: ::core::option::Option<i32>,
 }
 /// Pane-targeting action messages
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3028,6 +3030,35 @@ impl NestedSessionHandling {
             "NESTED_SESSION_HANDLING_FULLSCREEN" => Some(Self::Fullscreen),
             "NESTED_SESSION_HANDLING_DESCEND" => Some(Self::Descend),
             "NESTED_SESSION_HANDLING_NEVER" => Some(Self::Never),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ThemeHue {
+    Unspecified = 0,
+    Dark = 1,
+    Light = 2,
+}
+impl ThemeHue {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ThemeHue::Unspecified => "THEME_HUE_UNSPECIFIED",
+            ThemeHue::Dark => "THEME_HUE_DARK",
+            ThemeHue::Light => "THEME_HUE_LIGHT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "THEME_HUE_UNSPECIFIED" => Some(Self::Unspecified),
+            "THEME_HUE_DARK" => Some(Self::Dark),
+            "THEME_HUE_LIGHT" => Some(Self::Light),
             _ => None,
         }
     }
