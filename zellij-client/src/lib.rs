@@ -157,7 +157,9 @@ use zellij_utils::cli::CliArgs;
 use zellij_utils::{
     channels::{self, ChannelWithContext, SenderWithContext},
     consts::{set_permissions, ZELLIJ_SOCK_DIR},
-    data::{ClientId, ConnectToSession, KeyWithModifier, LayoutInfo, LayoutMetadata},
+    data::{
+        ClientId, CommandOrPlugin, ConnectToSession, KeyWithModifier, LayoutInfo, LayoutMetadata,
+    },
     envs,
     errors::{ClientContext, ContextType, ErrorInstruction},
     input::{
@@ -503,7 +505,12 @@ pub fn spawn_server(socket_path: &Path, debug: bool) -> io::Result<()> {
 #[derive(Debug, Clone)]
 pub enum ClientInfo {
     Attach(String, Options),
-    New(String, Option<LayoutInfo>, Option<PathBuf>), // PathBuf -> explicit cwd
+    New(
+        String,
+        Option<LayoutInfo>,
+        Option<PathBuf>,
+        Option<Vec<CommandOrPlugin>>,
+    ), // PathBuf -> explicit cwd
     Resurrect(String, PathBuf, bool, Option<PathBuf>), // (name, path_to_layout, force_run_commands, cwd)
     Watch(String, Options),                            // Watch mode (read-only)
 }
@@ -512,21 +519,27 @@ impl ClientInfo {
     pub fn get_session_name(&self) -> &str {
         match self {
             Self::Attach(ref name, _) => name,
-            Self::New(ref name, _layout_info, _layout_cwd) => name,
+            Self::New(ref name, _layout_info, _layout_cwd, _initial_panes) => name,
             Self::Resurrect(ref name, _, _, _) => name,
             Self::Watch(ref name, _) => name,
         }
     }
     pub fn set_layout_info(&mut self, new_layout_info: LayoutInfo) {
         match self {
-            ClientInfo::New(_, layout_info, _) => *layout_info = Some(new_layout_info),
+            ClientInfo::New(_, layout_info, _, _) => *layout_info = Some(new_layout_info),
             _ => {},
         }
     }
     pub fn set_cwd(&mut self, new_cwd: PathBuf) {
         match self {
-            ClientInfo::New(_, _, cwd) => *cwd = Some(new_cwd),
+            ClientInfo::New(_, _, cwd, _) => *cwd = Some(new_cwd),
             ClientInfo::Resurrect(_, _, _, cwd) => *cwd = Some(new_cwd),
+            _ => {},
+        }
+    }
+    pub fn set_initial_panes(&mut self, new_initial_panes: Vec<CommandOrPlugin>) {
+        match self {
+            ClientInfo::New(_, _, _, initial_panes) => *initial_panes = Some(new_initial_panes),
             _ => {},
         }
     }
@@ -1031,6 +1044,7 @@ pub fn start_client(
                 force_run_layout_commands: false,
                 cwd: None,
                 host_terminal_env: host_terminal_env(),
+                initial_panes: None,
             };
             (
                 ClientToServerMsg::AttachClient {
@@ -1077,6 +1091,7 @@ pub fn start_client(
                 force_run_layout_commands: force_run_commands,
                 cwd,
                 host_terminal_env: host_terminal_env(),
+                initial_panes: None,
             };
 
             os_input.update_session_name(name);
@@ -1101,7 +1116,7 @@ pub fn start_client(
                 ipc_pipe,
             )
         },
-        ClientInfo::New(name, layout_info, layout_cwd) => {
+        ClientInfo::New(name, layout_info, layout_cwd, initial_panes) => {
             envs::set_session_name(name.clone());
 
             let cli_assets = CliAssets {
@@ -1134,6 +1149,7 @@ pub fn start_client(
                 force_run_layout_commands: false,
                 cwd: layout_cwd,
                 host_terminal_env: host_terminal_env(),
+                initial_panes,
             };
 
             os_input.update_session_name(name);
@@ -1652,6 +1668,7 @@ pub fn start_server_detached(
                 force_run_layout_commands: force_run_commands,
                 cwd,
                 host_terminal_env: host_terminal_env(),
+                initial_panes: None,
             };
 
             os_input.update_session_name(name);
@@ -1676,7 +1693,7 @@ pub fn start_server_detached(
                 ipc_pipe,
             )
         },
-        ClientInfo::New(name, layout_info, layout_cwd) => {
+        ClientInfo::New(name, layout_info, layout_cwd, initial_panes) => {
             envs::set_session_name(name.clone());
 
             let cli_assets = CliAssets {
@@ -1710,6 +1727,7 @@ pub fn start_server_detached(
                 force_run_layout_commands: false,
                 cwd: layout_cwd,
                 host_terminal_env: host_terminal_env(),
+                initial_panes,
             };
 
             os_input.update_session_name(name);
