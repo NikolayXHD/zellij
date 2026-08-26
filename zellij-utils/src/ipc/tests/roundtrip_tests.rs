@@ -424,6 +424,7 @@ fn test_client_messages() {
             host_terminal_env: [("TERM".to_owned(), "xterm-kitty".to_owned())]
                 .into_iter()
                 .collect(),
+            initial_panes: None,
         },
         is_web_client: true,
     });
@@ -443,6 +444,7 @@ fn test_client_messages() {
             host_terminal_env: [("TERM".to_owned(), "xterm-kitty".to_owned())]
                 .into_iter()
                 .collect(),
+            initial_panes: None,
         },
         is_web_client: true,
     });
@@ -522,6 +524,16 @@ fn test_client_messages() {
             host_terminal_env: [("TERM".to_owned(), "xterm-kitty".to_owned())]
                 .into_iter()
                 .collect(),
+            initial_panes: Some(vec![
+                CommandOrPlugin::Command(RunCommandAction {
+                    command: PathBuf::from("htop"),
+                    args: vec!["-d".to_owned(), "5".to_owned()],
+                    cwd: Some(PathBuf::from("/path/to/cwd")),
+                    hold_on_close: true,
+                    ..Default::default()
+                }),
+                CommandOrPlugin::Plugin(RunPluginOrAlias::RunPlugin(RunPlugin::default())),
+            ]),
         },
         is_web_client: true,
     });

@@ -845,6 +845,10 @@ impl From<crate::input::cli_assets::CliAssets>
             force_run_layout_commands: cli_assets.force_run_layout_commands,
             cwd: cli_assets.cwd.map(|p| p.to_string_lossy().to_string()),
             host_terminal_env: cli_assets.host_terminal_env.into_iter().collect(),
+            initial_panes: cli_assets
+                .initial_panes
+                .map(|panes| panes.into_iter().map(|p| p.into()).collect())
+                .unwrap_or_default(),
         }
     }
 }
@@ -875,6 +879,17 @@ impl TryFrom<crate::client_server_contract::client_server_contract::CliAssets>
             force_run_layout_commands: cli_assets.force_run_layout_commands,
             cwd: cli_assets.cwd.map(PathBuf::from),
             host_terminal_env: cli_assets.host_terminal_env.into_iter().collect(),
+            initial_panes: if cli_assets.initial_panes.is_empty() {
+                None
+            } else {
+                Some(
+                    cli_assets
+                        .initial_panes
+                        .into_iter()
+                        .map(|p| p.try_into())
+                        .collect::<Result<Vec<_>>>()?,
+                )
+            },
         })
     }
 }

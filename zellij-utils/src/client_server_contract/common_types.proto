@@ -811,6 +811,7 @@ message CliAssets {
   bool force_run_layout_commands = 10;
   optional string cwd = 11;
   map<string, string> host_terminal_env = 12;
+  repeated CommandOrPlugin initial_panes = 13;
 }
 
 message LayoutInfo {
