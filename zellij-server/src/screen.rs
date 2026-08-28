@@ -1913,7 +1913,7 @@ impl Screen {
             .next()
             .context("screen contained no tabs")
             .with_context(err_context)?;
-        let mut destination_tab_ids = HashSet::new();
+        let mut arriving_client_ids: HashMap<usize, Vec<ClientId>> = HashMap::new();
         for (client_id, client_mode_info) in client_ids_and_mode_infos {
             let client_tab_history = self.tab_history.entry(client_id).or_insert_with(Vec::new);
             if let Some(client_previous_tab) = client_tab_history.pop() {
@@ -1922,7 +1922,10 @@ impl Screen {
                     client_active_tab
                         .add_client(client_id, Some(client_mode_info))
                         .with_context(err_context)?;
-                    destination_tab_ids.insert(client_previous_tab);
+                    arriving_client_ids
+                        .entry(client_previous_tab)
+                        .or_default()
+                        .push(client_id);
                     continue;
                 }
             }
@@ -1932,13 +1935,26 @@ impl Screen {
                 .with_context(err_context)?
                 .add_client(client_id, Some(client_mode_info))
                 .with_context(err_context)?;
-            destination_tab_ids.insert(first_tab_index);
+            arriving_client_ids
+                .entry(first_tab_index)
+                .or_default()
+                .push(client_id);
         }
-        for destination_tab_id in destination_tab_ids {
-            if let Some(destination_tab) = self.tabs.get_mut(&destination_tab_id) {
+        let destinations_overflowed_by_arriving_clients: HashSet<usize> = arriving_client_ids
+            .iter()
+            .filter(|(destination_tab_id, client_ids)| {
+                self.clients_are_larger_than_tab(**destination_tab_id, client_ids)
+            })
+            .map(|(destination_tab_id, _client_ids)| *destination_tab_id)
+            .collect();
+        for destination_tab_id in arriving_client_ids.keys() {
+            if let Some(destination_tab) = self.tabs.get_mut(destination_tab_id) {
                 destination_tab
                     .update_input_modes()
                     .with_context(err_context)?;
+                if destinations_overflowed_by_arriving_clients.contains(destination_tab_id) {
+                    destination_tab.set_should_clear_display_before_rendering();
+                }
             }
         }
         Ok(())
