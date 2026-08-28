@@ -9770,6 +9770,19 @@ impl ThemeCapture {
         }
         out
     }
+    fn drain_visible_events(&self) -> Vec<(Option<u32>, bool)> {
+        let mut out = Vec::new();
+        while let Ok((instr, _ctx)) = self.plugin_rx.try_recv() {
+            if let PluginInstruction::Update(updates) = instr {
+                for (pid, _cid, ev) in updates {
+                    if let Event::Visible(is_visible) = ev {
+                        out.push((pid, is_visible));
+                    }
+                }
+            }
+        }
+        out
+    }
     fn drain_pty_writes(&self) -> Vec<(Vec<u8>, u32)> {
         let mut out = Vec::new();
         while let Ok((instr, _ctx)) = self.pty_writer_rx.try_recv() {
@@ -9779,6 +9792,41 @@ impl ThemeCapture {
         }
         out
     }
+}
+
+#[test]
+fn reattaching_a_client_restores_floating_pane_visibility_notifications() {
+    let size = Size {
+        cols: 121,
+        rows: 20,
+    };
+    let (mut screen, capture) = create_new_screen_with_theme_capture(size);
+    new_tab(&mut screen, 1, 0);
+    screen
+        .get_active_tab_mut(1)
+        .unwrap()
+        .new_pane(
+            PaneId::Plugin(2),
+            None,
+            None,
+            false,
+            true,
+            NewPanePlacement::Floating(None),
+            Some(1),
+            None,
+        )
+        .unwrap();
+
+    screen.remove_client(1).expect("TEST");
+    screen.add_client(1, false).expect("TEST");
+    let _ = capture.drain_visible_events();
+    screen.get_active_tab_mut(1).unwrap().hide_floating_panes();
+
+    assert!(
+        capture.drain_visible_events().contains(&(Some(2), false)),
+        "a floating plugin must still be told when its surface is hidden after a reattach, \
+         otherwise plugins idling on a timer keep working while off screen"
+    );
 }
 
 fn create_new_screen_with_theme_capture(size: Size) -> (Screen, ThemeCapture) {
@@ -10266,6 +10314,50 @@ fn removing_explicit_theme_hue_hands_authority_back_to_the_host() {
         screen.style.colors.text_unselected.background,
         zellij_utils::data::PaletteColor::Rgb(TEST_DARK_BG),
         "the palette must follow the restored mode"
+    );
+}
+
+#[test]
+fn pinning_the_current_hue_repaints_the_resolved_palette() {
+    let size = Size { cols: 80, rows: 20 };
+    let (mut screen, _capture) = create_new_screen_with_dark_and_light_themes(size);
+    screen
+        .update_host_terminal_theme_mode(zellij_utils::data::HostTerminalThemeMode::Dark)
+        .expect("host report applied");
+    screen.style.colors = styling_with_background((1, 2, 3));
+
+    screen
+        .apply_configured_explicit_theme_hue(Some(zellij_utils::data::ThemeHue::Dark))
+        .expect("explicit hue applied");
+
+    assert_eq!(
+        screen.style.colors.text_unselected.background,
+        zellij_utils::data::PaletteColor::Rgb(TEST_DARK_BG),
+        "pinning the hue the session is already in must still resolve the palette, \
+         otherwise a reconfigure leaves the session painted with the static theme"
+    );
+}
+
+#[test]
+fn unpinning_back_to_the_current_hue_repaints_the_resolved_palette() {
+    let size = Size { cols: 80, rows: 20 };
+    let (mut screen, _capture) = create_new_screen_with_dark_and_light_themes(size);
+    screen
+        .update_host_terminal_theme_mode(zellij_utils::data::HostTerminalThemeMode::Dark)
+        .expect("host report applied");
+    screen
+        .apply_configured_explicit_theme_hue(Some(zellij_utils::data::ThemeHue::Dark))
+        .expect("explicit hue applied");
+    screen.style.colors = styling_with_background((1, 2, 3));
+
+    screen
+        .apply_configured_explicit_theme_hue(None)
+        .expect("unpinned");
+
+    assert_eq!(
+        screen.style.colors.text_unselected.background,
+        zellij_utils::data::PaletteColor::Rgb(TEST_DARK_BG),
+        "unpinning to the mode the session is already in must still resolve the palette"
     );
 }
 

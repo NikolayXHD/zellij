@@ -45,6 +45,7 @@ const BASE64_DECODER: GeneralPurpose = GeneralPurpose::new(
 );
 
 const MAX_TRACKED_NOTIFICATION_IDS: usize = 256;
+const MAX_NOTIFICATION_ASSEMBLY_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingNotification {
@@ -129,6 +130,22 @@ struct NotificationAssembly {
     body: String,
 }
 
+fn append_bounded(destination: &mut String, payload: &str) {
+    let remaining = MAX_NOTIFICATION_ASSEMBLY_BYTES.saturating_sub(destination.len());
+    if remaining == 0 {
+        return;
+    }
+    if payload.len() <= remaining {
+        destination.push_str(payload);
+        return;
+    }
+    let mut truncate_at = remaining;
+    while truncate_at > 0 && !payload.is_char_boundary(truncate_at) {
+        truncate_at -= 1;
+    }
+    destination.push_str(&payload[..truncate_at]);
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NotificationTracker {
     wants_report: HashMap<String, bool>,
@@ -180,8 +197,8 @@ impl NotificationTracker {
             self.remember(id);
             let assembly = self.assemblies.entry(id.to_owned()).or_default();
             match payload_type {
-                Osc99PayloadType::Title => assembly.title.push_str(&payload),
-                Osc99PayloadType::Body => assembly.body.push_str(&payload),
+                Osc99PayloadType::Title => append_bounded(&mut assembly.title, &payload),
+                Osc99PayloadType::Body => append_bounded(&mut assembly.body, &payload),
                 _ => {},
             }
         }
