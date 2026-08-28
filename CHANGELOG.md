@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
+
+## [0.45.1] - 2026-08-28
 * fix: nested-session detection over SSH (https://github.com/zellij-org/zellij/pull/5522)
 * fix: some issues with notification parsing (eg. neovim notification on save) (https://github.com/zellij-org/zellij/pull/5523)
 * fix: kitty image size on startup and clearing with stacked unlisted full framed panes (https://github.com/zellij-org/zellij/pull/5526)
