@@ -5070,8 +5070,12 @@ impl Screen {
             .tabs
             .get_mut(&tab_index)
             .with_context(|| err_context(tab_index))?;
+        let tab_was_empty = tab.has_no_connected_clients();
         tab.add_client(client_id, None)
             .with_context(|| err_context(tab_index))?;
+        if tab_was_empty {
+            tab.visible(true).with_context(|| err_context(tab_index))?;
+        }
         if attach_to_first_tab_on_tiled_surface && tab.are_floating_panes_visible() {
             tab.hide_floating_panes();
         }
@@ -7100,6 +7104,7 @@ impl Screen {
         explicit_theme_hue: Option<ThemeHue>,
     ) -> Result<()> {
         self.configured_explicit_theme_hue = explicit_theme_hue;
+        self.host_terminal_theme_mode = None;
         match explicit_theme_hue {
             Some(hue) => {
                 let mode = HostTerminalThemeMode::from(hue);

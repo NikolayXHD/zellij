@@ -9085,6 +9085,42 @@ fn the_notification_state_remembered_per_pane_is_bounded() {
     );
 }
 
+#[test]
+fn a_single_notification_being_assembled_is_bounded() {
+    let mut grid = new_grid_for_forwarding_test();
+    let mut vte_parser = vte::Parser::new();
+    let chunk = "\u{5efa}".repeat(300);
+    for _ in 0..100 {
+        vte_parser.advance(
+            &mut grid,
+            format!("\x1b]99;i=1:d=0;{}\x1b\\", chunk).as_bytes(),
+        );
+    }
+
+    let assembled_bytes = grid
+        .notification_tracker
+        .assemblies
+        .get("1")
+        .map(|assembly| assembly.title.len())
+        .unwrap_or(0);
+    assert!(
+        assembled_bytes <= 4096,
+        "an app streaming an endless single notification does not grow the pane's state without \
+         bound, got {} bytes",
+        assembled_bytes
+    );
+
+    vte_parser.advance(&mut grid, b"\x1b]99;i=1:d=1;\x1b\\");
+    let last_notification = grid.pending_desktop_notifications.len() - 1;
+    let (title, _body) =
+        osc99_display(&grid, last_notification).expect("the truncated notification is still shown");
+    assert_eq!(
+        title,
+        "\u{5efa}".repeat(1365),
+        "the assembled text is truncated on a character boundary"
+    );
+}
+
 fn rendered_row(grid: &Grid, row_index: usize) -> String {
     grid.viewport[row_index]
         .columns
