@@ -1100,13 +1100,9 @@ impl PaneFrame {
 
         let left_esc_bracket = "<";
         let esc_text = "ESC";
+        let esc_and_break_text = "/ Ctrl-c";
         let right_esc_bracket = ">";
-        let esc_tip = " drop to shell, ";
-
-        let left_break_bracket = "<";
-        let break_text = "Ctrl-c";
-        let right_break_bracket = ">";
-        let break_tip = " exit ";
+        let esc_tip = " drop to shell ";
         second_part.append(&mut foreground_color(left_enter_bracket, self.color));
         second_part.append(&mut foreground_color(
             enter_text,
@@ -1120,16 +1116,12 @@ impl PaneFrame {
             esc_text,
             Some(self.style.colors.text_unselected.emphasis_0),
         ));
-        second_part.append(&mut foreground_color(right_esc_bracket, self.color));
-        second_part.append(&mut foreground_color(esc_tip, self.color));
-
-        second_part.append(&mut foreground_color(left_break_bracket, self.color));
         second_part.append(&mut foreground_color(
-            break_text,
+            esc_and_break_text,
             Some(self.style.colors.text_unselected.emphasis_0),
         ));
-        second_part.append(&mut foreground_color(right_break_bracket, self.color));
-        second_part.append(&mut foreground_color(break_tip, self.color));
+        second_part.append(&mut foreground_color(right_esc_bracket, self.color));
+        second_part.append(&mut foreground_color(esc_tip, self.color));
         (
             second_part,
             left_enter_bracket.len()
@@ -1138,12 +1130,9 @@ impl PaneFrame {
                 + enter_tip.len()
                 + left_esc_bracket.len()
                 + esc_text.len()
+                + esc_and_break_text.len()
                 + right_esc_bracket.len()
-                + esc_tip.len()
-                + left_break_bracket.len()
-                + break_text.len()
-                + right_break_bracket.len()
-                + break_tip.len(),
+                + esc_tip.len(),
         )
     }
     fn hover_shortcuts_part_full(&self) -> (Vec<TerminalCharacter>, usize) {

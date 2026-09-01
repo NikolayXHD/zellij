@@ -292,12 +292,12 @@ impl Pane for TerminalPane {
                 .map(|k| k.is_key_with_ctrl_modifier(BareKey::Char('c')))
                 .unwrap_or(false)
             {
-                Some(AdjustedInput::CloseThisPane)
+                self.handle_held_drop_to_shell()
             } else {
                 match raw_input_bytes.as_slice() {
                     ENTER_CARRIAGE_RETURN | ENTER_NEWLINE | SPACE => self.handle_held_run(),
                     ESC => self.handle_held_drop_to_shell(),
-                    CTRL_C => Some(AdjustedInput::CloseThisPane),
+                    CTRL_C => self.handle_held_drop_to_shell(),
                     _ => None,
                 }
             }

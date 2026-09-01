@@ -1074,7 +1074,7 @@ impl Pty {
         let originating_edit_plugin = Arc::new(originating_edit_plugin.clone());
         let quit_cb = Box::new({
             let senders = self.bus.senders.clone();
-            move |pane_id, exit_status, command| {
+            move |pane_id, exit_status, command: RunCommand| {
                 // if this command originated in a plugin, we send the plugin an event letting it
                 // know the command exited and some other useful information
                 if let PaneId::Terminal(pane_id) = pane_id {
@@ -1105,11 +1105,12 @@ impl Pty {
                 }
 
                 if hold_on_close {
-                    let _ = senders.send_to_screen(ScreenInstruction::HoldPane(
+                    let _ = senders.send_to_pty(PtyInstruction::DropToShellInPane {
                         pane_id,
-                        exit_status,
-                        command,
-                    ));
+                        shell: None,
+                        working_dir: command.cwd.clone(),
+                        completion_tx: None,
+                    });
                 } else {
                     let _ = senders.send_to_screen(ScreenInstruction::ClosePane(
                         pane_id,
@@ -1613,7 +1614,7 @@ impl Pty {
                 let hold_on_close = command.hold_on_close;
                 let quit_cb = Box::new({
                     let senders = self.bus.senders.clone();
-                    move |pane_id, exit_status, command| {
+                    move |pane_id, exit_status, command: RunCommand| {
                         if let PaneId::Terminal(terminal_pane_id) = pane_id {
                             if let Some(originating_plugin) = originating_plugin.as_ref() {
                                 let update_event = Event::CommandPaneExited(
@@ -1630,11 +1631,12 @@ impl Pty {
                         }
 
                         if hold_on_close {
-                            let _ = senders.send_to_screen(ScreenInstruction::HoldPane(
+                            let _ = senders.send_to_pty(PtyInstruction::DropToShellInPane {
                                 pane_id,
-                                exit_status,
-                                command,
-                            ));
+                                shell: None,
+                                working_dir: command.cwd.clone(),
+                                completion_tx: None,
+                            });
                         } else {
                             let _ = senders.send_to_screen(ScreenInstruction::ClosePane(
                                 pane_id,
@@ -1863,7 +1865,7 @@ impl Pty {
                 let originating_plugin = Arc::new(run_command.originating_plugin.clone());
                 let quit_cb = Box::new({
                     let senders = self.bus.senders.clone();
-                    move |pane_id, exit_status, command| {
+                    move |pane_id, exit_status, command: RunCommand| {
                         if let PaneId::Terminal(pane_id) = pane_id {
                             if let Some(originating_plugin) = originating_plugin.as_ref() {
                                 let update_event = Event::CommandPaneExited(
@@ -1879,11 +1881,12 @@ impl Pty {
                             }
                         }
                         if hold_on_close {
-                            let _ = senders.send_to_screen(ScreenInstruction::HoldPane(
+                            let _ = senders.send_to_pty(PtyInstruction::DropToShellInPane {
                                 pane_id,
-                                exit_status,
-                                command,
-                            ));
+                                shell: None,
+                                working_dir: command.cwd.clone(),
+                                completion_tx: None,
+                            });
                         } else {
                             let _ = senders.send_to_screen(ScreenInstruction::ClosePane(
                                 pane_id,

@@ -1003,10 +1003,8 @@ pub fn render_first_run_banner(
             let controls_bare_text_first_part = "<";
             let enter_bare_text = "ENTER";
             let controls_bare_text_second_part = "> run, <";
-            let esc_bare_text = "ESC";
-            let controls_bare_text_third_part = "> drop to shell, <";
-            let ctrl_c_bare_text = "Ctrl-c";
-            let controls_bare_text_fourth_part = "> exit";
+            let esc_and_ctrl_c_bare_text = "ESC / Ctrl-c";
+            let controls_bare_text_third_part = "> drop to shell";
             let controls_color = RESET_STYLES
                 .foreground(Some(AnsiCode::from(
                     style.colors.text_unselected.emphasis_0,
@@ -1015,14 +1013,12 @@ pub fn render_first_run_banner(
             let controls_line_length = controls_bare_text_first_part.len()
                 + enter_bare_text.len()
                 + controls_bare_text_second_part.len()
-                + esc_bare_text.len()
-                + controls_bare_text_third_part.len()
-                + ctrl_c_bare_text.len()
-                + controls_bare_text_fourth_part.len();
+                + esc_and_ctrl_c_bare_text.len()
+                + controls_bare_text_third_part.len();
             let controls_column_start_position =
                 middle_column.saturating_sub(controls_line_length / 2);
             let controls_line = format!(
-                "\u{1b}[{};{}H{}<{}{}{}{}> run, <{}{}{}{}> drop to shell, <{}{}{}{}> exit",
+                "\u{1b}[{};{}H{}<{}{}{}{}> run, <{}{}{}{}> drop to shell",
                 middle_row + 2,
                 controls_column_start_position,
                 bold_text,
@@ -1031,11 +1027,7 @@ pub fn render_first_run_banner(
                 RESET_STYLES,
                 bold_text,
                 controls_color,
-                esc_bare_text,
-                RESET_STYLES,
-                bold_text,
-                controls_color,
-                ctrl_c_bare_text,
+                esc_and_ctrl_c_bare_text,
                 RESET_STYLES,
                 bold_text
             );
@@ -1057,10 +1049,8 @@ pub fn render_first_run_banner(
             let controls_bare_text_first_part = "<";
             let enter_bare_text = "ENTER";
             let controls_bare_text_second_part = "> run, <";
-            let esc_bare_text = "ESC";
-            let controls_bare_text_third_part = "> drop to shell, <";
-            let ctrl_c_bare_text = "Ctrl-c";
-            let controls_bare_text_fourth_part = "> exit";
+            let esc_and_ctrl_c_bare_text = "ESC / Ctrl-c";
+            let controls_bare_text_third_part = "> drop to shell";
             let controls_color = RESET_STYLES
                 .foreground(Some(AnsiCode::from(
                     style.colors.text_unselected.emphasis_0,
@@ -1069,14 +1059,12 @@ pub fn render_first_run_banner(
             let controls_line_length = controls_bare_text_first_part.len()
                 + enter_bare_text.len()
                 + controls_bare_text_second_part.len()
-                + esc_bare_text.len()
-                + controls_bare_text_third_part.len()
-                + ctrl_c_bare_text.len()
-                + controls_bare_text_fourth_part.len();
+                + esc_and_ctrl_c_bare_text.len()
+                + controls_bare_text_third_part.len();
             let controls_column_start_position =
                 middle_column.saturating_sub(controls_line_length / 2);
             let controls_line = format!(
-                "\u{1b}[{};{}H{}<{}{}{}{}> run, <{}{}{}{}> drop to shell, <{}{}{}{}> exit",
+                "\u{1b}[{};{}H{}<{}{}{}{}> run, <{}{}{}{}> drop to shell",
                 middle_row + 2,
                 controls_column_start_position,
                 bold_text,
@@ -1085,11 +1073,7 @@ pub fn render_first_run_banner(
                 RESET_STYLES,
                 bold_text,
                 controls_color,
-                esc_bare_text,
-                RESET_STYLES,
-                bold_text,
-                controls_color,
-                ctrl_c_bare_text,
+                esc_and_ctrl_c_bare_text,
                 RESET_STYLES,
                 bold_text
             );

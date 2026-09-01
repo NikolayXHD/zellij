@@ -2015,7 +2015,7 @@ fn init_session(
                 Bus::new(
                     vec![pty_receiver],
                     Some(&to_screen_bounded),
-                    None,
+                    Some(&to_pty),
                     Some(&to_plugin),
                     Some(&to_server),
                     Some(&to_pty_writer),
