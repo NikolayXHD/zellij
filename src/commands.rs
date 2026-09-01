@@ -722,7 +722,6 @@ pub(crate) fn start_client(opts: CliArgs) {
                     session_name: reconnect_to_session.name.clone(),
                     create: true,
                     create_background: false,
-                    force_run_commands: false,
                     index: None,
                     options: None,
                     token: None,
@@ -756,7 +755,6 @@ pub(crate) fn start_client(opts: CliArgs) {
             session_name,
             create,
             create_background,
-            force_run_commands,
             index,
             options,
             token,
@@ -778,7 +776,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                     std::process::exit(2);
                 }
 
-                if options.is_some() || create || create_background || force_run_commands {
+                if options.is_some() || create || create_background {
                     eprintln!("Cannot attach to remote session with options.");
                     std::process::exit(2);
                 }
@@ -834,14 +832,11 @@ pub(crate) fn start_client(opts: CliArgs) {
                         session_name.clone().map(start_client_plan);
                     }
                     match (session_name.as_ref(), resurrection_layout) {
-                        (Some(session_name), Some(mut resurrection_layout)) if !session_exists => {
-                            if force_run_commands {
-                                resurrection_layout.recursively_add_start_suspended(Some(false));
-                            }
+                        (Some(session_name), Some(_)) if !session_exists => {
                             ClientInfo::Resurrect(
                                 session_name.clone(),
                                 session_layout_cache_file_name(session_name.as_ref()),
-                                force_run_commands,
+                                true,
                                 new_session_cwd.clone(),
                             )
                         },

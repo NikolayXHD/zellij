@@ -100,7 +100,7 @@ pub fn create_first_message(
             data_dir: None,
             is_debug: false,
             max_panes: None,
-            force_run_layout_commands: false,
+            force_run_layout_commands: true,
             cwd: None,
         };
 
@@ -119,7 +119,7 @@ pub fn create_first_message(
             data_dir: None,
             is_debug: false,
             max_panes: None,
-            force_run_layout_commands: false,
+            force_run_layout_commands: true,
             cwd: None,
         };
         let is_web_client = true;
